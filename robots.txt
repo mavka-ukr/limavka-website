@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /організація/
+
+Sitemap: https://xn--k1a8c.xn--80aaf6ah.xn--j1amh/sitemap.xml
