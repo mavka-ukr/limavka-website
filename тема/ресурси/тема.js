@@ -407,7 +407,7 @@ const $releases = document.getElementById("releases");
     let busy = false;
 
     const READY_TEXT =
-      'Прошивку завантажено. Підключіть Лілку через USB і натисніть "⚡ Встановити", щоб вибрати порт та встановити прошивку.';
+      'Прошивку завантажено. Підключіть Лілку через USB і натисніть <span style="text-wrap: nowrap;">"⚡ Встановити"</span>, щоб вибрати порт та встановити прошивку.';
 
     function ensureModal() {
       if (modalEl) return modalEl;
@@ -511,7 +511,7 @@ const $releases = document.getElementById("releases");
       const readyStage = modalEl.querySelector(
         '.InstallModalStage[data-stage="ready"]',
       );
-      readyStage.querySelector(".InstallModalText").textContent = READY_TEXT;
+      readyStage.querySelector(".InstallModalText").innerHTML = READY_TEXT;
       const btn = readyStage.querySelector("[data-action]");
       btn.textContent = "⚡ Встановити";
       btn.dataset.action = "continue";
