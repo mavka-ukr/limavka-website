@@ -35,7 +35,7 @@
   --nav-active-rgb: 0, 0, 0;
   --nav-active-text-rgb: 255, 255, 255;
 
-  --latest-rgb: 125, 46, 52;
+  --latest-rgb: 0, 0, 0;
   --latest-text-rgb: 255, 255, 255;
 }
 
@@ -1198,7 +1198,7 @@ li + li {
     .ReleasesLoadingError {
       margin: 0;
       font-size: 0.875rem;
-      color: rgb(var(--latest-rgb));
+      color: rgb(var(--text-rgb));
     }
   }
 }
