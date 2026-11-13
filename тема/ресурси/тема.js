@@ -300,7 +300,9 @@ const $releases = document.getElementById("releases");
 
 (async () => {
   if ($releases) {
-    const versions = await fetch("./ресурси/версії.json").then((r) => r.json());
+    const versions = await fetch("./ресурси/версії.json", {
+      cache: "no-cache",
+    }).then((r) => r.json());
 
     // Loaded lazily; awaited only when the device is actually needed
     const esptool =
