@@ -407,7 +407,7 @@ const $releases = document.getElementById("releases");
     let busy = false;
 
     const READY_TEXT =
-      'Прошивку завантажено. Підключіть Лілку через USB і натисніть <span style="text-wrap: nowrap;">"⚡ Встановити"</span>, щоб вибрати порт та встановити прошивку.';
+      'Прошивку завантажено. Підключіть Лілку через USB і натисніть <span style="text-wrap: nowrap;">"⚡ Встановити"</span>, щоб вибрати порт та записати прошивку.';
 
     function ensureModal() {
       if (modalEl) return modalEl;
