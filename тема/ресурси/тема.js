@@ -300,7 +300,7 @@ const $releases = document.getElementById("releases");
 
 (async () => {
   if ($releases) {
-    const versions = await fetch("./ресурси/версії.json", {
+    const versions = await fetch("./ресурси/тема/версії.json", {
       cache: "no-cache",
     }).then((r) => r.json());
 
