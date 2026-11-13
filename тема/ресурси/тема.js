@@ -383,7 +383,7 @@ if ($releases) {
   let busy = false;
 
   const READY_TEXT =
-    "Прошивку завантажено. Підключіть Лілку через USB і натисніть «Продовжити», щоб вибрати порт.";
+    'Прошивку завантажено. Підключіть Лілку через USB і натисніть "Встановити", щоб вибрати порт.';
 
   function ensureModal() {
     if (modalEl) return modalEl;
@@ -404,7 +404,7 @@ if ($releases) {
           <div class="InstallModalStage" data-stage="ready" hidden>
             <p class="InstallModalText"></p>
             <div class="InstallModalActions">
-              <button type="button" class="InstallModalButton" data-action="continue">Продовжити</button>
+              <button type="button" class="InstallModalButton" data-action="continue">Встановити</button>
             </div>
           </div>
           <div class="InstallModalStage" data-stage="install" hidden>
@@ -489,7 +489,7 @@ if ($releases) {
     );
     readyStage.querySelector(".InstallModalText").textContent = READY_TEXT;
     const btn = readyStage.querySelector("[data-action]");
-    btn.textContent = "Продовжити";
+    btn.textContent = "Встановити";
     btn.dataset.action = "continue";
   }
 
