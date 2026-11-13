@@ -295,3 +295,380 @@ $tables.forEach(($table) => {
   $table.insertAdjacentElement("beforebegin", $tableWrapper);
   $tableWrapper.appendChild($table);
 });
+
+const $releases = document.getElementById("releases");
+
+if ($releases) {
+  const versions = [
+    {
+      version: "ЛіМавка-нічна.bin",
+      dateOrSubtext: "версія з GitHub репозиторію",
+      bin: "https://raw.githubusercontent.com/mavka-ukr/limavka-files/main/випуски-лімавки/нічна/ЛіМавка-нічна.bin",
+    },
+    // {
+    //   version: "ЛіМавка-0.0.1.bin",
+    //   dateOrSubtext: "31.12.2026",
+    //   isLatest: true,
+    //   bin: "https://example.com/firmware/2.6.12.bin", // TODO: replace with real URL
+    //   changes: [
+    //     "краще",
+    //     "ліпше",
+    //     "сильніше",
+    //   ],
+    // },
+  ];
+
+  // Loaded lazily; awaited only when the device is actually needed
+  const esptool = import("https://cdn.jsdelivr.net/npm/esptool-js@0.4.3/+esm");
+  esptool.catch(() => {});
+
+  function hasWebSerial() {
+    return window.isSecureContext && "serial" in navigator;
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  // esptool-js 0.4 takes firmware as a binary string
+  function toBinaryString(bytes) {
+    let result = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      result += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return result;
+  }
+
+  function releaseCard(v) {
+    const latestBadge = v.isLatest
+      ? `<span class="ReleaseCardBadge">ОСТАННЯ</span>`
+      : "";
+    const latestMod = v.isLatest ? " ReleaseCard--latest" : "";
+    const changes = (v.changes || []).map((c) => `<li>${c}</li>`).join("");
+    const disabled = v.bin ? "" : " disabled";
+
+    return `
+      <article class="ReleaseCard${latestMod}">
+        <div class="ReleaseCardInfo">
+          <div class="ReleaseCardHead">
+            <div class="ReleaseCardVersion">${v.version}</div>
+            ${latestBadge}
+          </div>
+          ${v.dateOrSubtext ? '<div class="ReleaseCardDate">' + v.dateOrSubtext + "</div>" : ""}
+          ${changes ? '<details class="ReleaseCardChangelog"><summary>Що нового</summary><ul>' + changes + "</ul></details>" : ""}
+        </div>
+        <button type="button" class="ReleaseCardButton" data-version="${v.version}"${disabled}>
+          ⚡ Встановити
+        </button>
+      </article>
+    `;
+  }
+
+  $releases.innerHTML = versions.map(releaseCard).join("");
+
+  $releases.addEventListener("click", (e) => {
+    const btn = e.target.closest(".ReleaseCardButton");
+    if (!btn) return;
+    const version = versions.find((v) => v.version === btn.dataset.version);
+    if (version) openInstall(version);
+  });
+
+  // --- Install modal ---
+
+  let modalEl = null;
+  let installVersion = null;
+  let downloadedData = null; // Uint8Array | null
+  let busy = false;
+
+  const READY_TEXT =
+    "Прошивку завантажено. Підключіть Лілку через USB і натисніть «Продовжити», щоб вибрати порт.";
+
+  function ensureModal() {
+    if (modalEl) return modalEl;
+    modalEl = document.createElement("dialog");
+    modalEl.className = "InstallModal";
+    modalEl.innerHTML = `
+      <div class="InstallModalInner">
+        <div class="InstallModalHead">
+          <h3 class="InstallModalTitle"></h3>
+          <button type="button" class="InstallModalClose" data-action="close" aria-label="Закрити">×</button>
+        </div>
+        <div class="InstallModalBody">
+          <div class="InstallModalStage" data-stage="download">
+            <p class="InstallModalText">Завантаження прошивки...</p>
+            <div class="ProgressBar"><div class="progress-fill"></div></div>
+            <p class="progress-text"></p>
+          </div>
+          <div class="InstallModalStage" data-stage="ready" hidden>
+            <p class="InstallModalText"></p>
+            <div class="InstallModalActions">
+              <button type="button" class="InstallModalButton" data-action="continue">Продовжити</button>
+            </div>
+          </div>
+          <div class="InstallModalStage" data-stage="install" hidden>
+            <div class="ProgressBar"><div class="progress-fill"></div></div>
+            <p class="progress-text"></p>
+            <div class="flash-log InstallModalLog"></div>
+            <div class="InstallModalActions InstallModalActions--result" hidden data-install-actions>
+              <button type="button" class="InstallModalButton" data-action="retry">Спробувати знову</button>
+              <button type="button" class="InstallModalButton InstallModalButton--ghost" data-action="close">Закрити</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modalEl);
+
+    modalEl.addEventListener("click", (e) => {
+      if (e.target === modalEl || e.target.closest('[data-action="close"]')) {
+        closeModal();
+      } else if (e.target.closest('[data-action="continue"]')) {
+        startInstall();
+      } else if (e.target.closest('[data-action="retry"]')) {
+        if (installVersion) openInstall(installVersion);
+      }
+    });
+    modalEl.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      closeModal();
+    });
+
+    return modalEl;
+  }
+
+  function showStage(name) {
+    modalEl.querySelectorAll(".InstallModalStage").forEach((stage) => {
+      stage.hidden = stage.dataset.stage !== name;
+    });
+  }
+
+  function setProgress(stage, percent, message) {
+    const stageEl = modalEl.querySelector(
+      `.InstallModalStage[data-stage="${stage}"]`,
+    );
+    if (!stageEl) return;
+    const fill = stageEl.querySelector(".progress-fill");
+    const text = stageEl.querySelector(".progress-text");
+    if (fill) fill.style.width = `${percent}%`;
+    if (text && message != null) text.textContent = message;
+  }
+
+  function logInstall(message, type = "") {
+    const stageEl = modalEl.querySelector(
+      '.InstallModalStage[data-stage="install"]',
+    );
+    const logEl = stageEl.querySelector(".flash-log");
+    const p = document.createElement("p");
+    p.textContent = message;
+    if (type) p.className = `log-${type}`;
+    logEl.appendChild(p);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function showInstallActions(showRetry) {
+    const stageEl = modalEl.querySelector(
+      '.InstallModalStage[data-stage="install"]',
+    );
+    const actions = stageEl.querySelector("[data-install-actions]");
+    actions.hidden = false;
+    actions.querySelector('[data-action="retry"]').hidden = !showRetry;
+  }
+
+  function hideInstallActions() {
+    const stageEl = modalEl.querySelector(
+      '.InstallModalStage[data-stage="install"]',
+    );
+    stageEl.querySelector("[data-install-actions]").hidden = true;
+  }
+
+  function resetReadyStage() {
+    const readyStage = modalEl.querySelector(
+      '.InstallModalStage[data-stage="ready"]',
+    );
+    readyStage.querySelector(".InstallModalText").textContent = READY_TEXT;
+    const btn = readyStage.querySelector("[data-action]");
+    btn.textContent = "Продовжити";
+    btn.dataset.action = "continue";
+  }
+
+  function openInstall(version) {
+    if (!version || !version.bin) return;
+    installVersion = version;
+    downloadedData = null;
+    busy = false;
+
+    ensureModal();
+    modalEl.querySelector(".InstallModalTitle").textContent =
+      `Прошивка ${version.version}`;
+    resetReadyStage();
+    hideInstallActions();
+    showStage("download");
+    setProgress("download", 0, "");
+    modalEl.showModal();
+
+    downloadBin(version);
+  }
+
+  function closeModal() {
+    if (
+      busy &&
+      !confirm("Прошивка в процесі. Ви впевнені, що хочете скасувати?")
+    )
+      return;
+    if (modalEl && modalEl.open) modalEl.close();
+  }
+
+  async function downloadBin(version) {
+    try {
+      const response = await fetch(version.bin);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const total = Number(response.headers.get("Content-Length")) || 0;
+      if (!response.body || !total) {
+        // No Content-Length / no streaming: fall back to a single read
+        const buf = await response.arrayBuffer();
+        downloadedData = new Uint8Array(buf);
+        setProgress(
+          "download",
+          100,
+          `Розмір файлу: ${formatSize(downloadedData.length)}`,
+        );
+      } else {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          setProgress(
+            "download",
+            Math.min(99, Math.round((received / total) * 100)),
+            `${formatSize(received)} / ${formatSize(total)}`,
+          );
+        }
+        const merged = new Uint8Array(received);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.length;
+        }
+        downloadedData = merged;
+        setProgress(
+          "download",
+          100,
+          `Розмір файлу: ${formatSize(downloadedData.length)}`,
+        );
+      }
+
+      showStage("ready");
+    } catch (err) {
+      console.error(err);
+      // Reuse the ready stage but turn it into an error/retry view
+      const readyStage = modalEl.querySelector(
+        '.InstallModalStage[data-stage="ready"]',
+      );
+      readyStage.querySelector(".InstallModalText").textContent =
+        `❌ Не вдалося завантажити прошивку: ${err.message}`;
+      const btn = readyStage.querySelector("[data-action]");
+      btn.textContent = "Спробувати знову";
+      btn.dataset.action = "retry";
+      showStage("ready");
+    }
+  }
+
+  async function startInstall() {
+    if (busy || !downloadedData) return;
+
+    if (!hasWebSerial()) {
+      showStage("install");
+      hideInstallActions();
+      modalEl
+        .querySelector('.InstallModalStage[data-stage="install"] .flash-log')
+        .replaceChildren();
+      setProgress("install", 0, "");
+      logInstall(
+        "❌ Ваш браузер не підтримує Web Serial API. Використовуйте Chrome, Edge або Opera.",
+        "error",
+      );
+      showInstallActions(true);
+      return;
+    }
+
+    busy = true;
+    showStage("install");
+    hideInstallActions();
+    const installStage = modalEl.querySelector(
+      '.InstallModalStage[data-stage="install"]',
+    );
+    installStage.querySelector(".flash-log").replaceChildren();
+    setProgress("install", 0, "");
+
+    let transport = null;
+    try {
+      logInstall("Виберіть COM-порт у діалоговому вікні...");
+      const port = await navigator.serial.requestPort();
+
+      setProgress("install", 5, "Підключення до ESP32...");
+      logInstall("Підключення до ESP32...");
+      const { ESPLoader, Transport } = await esptool.catch(() => {
+        throw new Error("ESPTool не завантажено. Оновіть сторінку.");
+      });
+      transport = new Transport(port);
+      const loader = new ESPLoader({
+        transport,
+        baudrate: 115200,
+        romBaudrate: 115200,
+        terminal: {
+          clean() {},
+          writeLine: (data) => logInstall(data),
+          write(data) {
+            const last =
+              installStage.querySelector(".flash-log").lastElementChild;
+            if (last) last.textContent += data;
+            else logInstall(data);
+          },
+        },
+      });
+      await loader.main();
+      logInstall(`Виявлено чіп: ${loader.chipName}`, "success");
+
+      setProgress("install", 15, "Запис прошивки...");
+      await loader.writeFlash({
+        fileArray: [{ data: toBinaryString(downloadedData), address: 0x0 }],
+        flashSize: "keep",
+        flashMode: "keep",
+        flashFreq: "keep",
+        eraseAll: false,
+        compress: true,
+        reportProgress: (_, written, t) =>
+          setProgress(
+            "install",
+            20 + Math.round((written / t) * 75),
+            `Запис: ${formatSize(written)} / ${formatSize(t)}`,
+          ),
+      });
+
+      setProgress("install", 98, "Перезапуск пристрою...");
+      logInstall("Перезапуск пристрою...");
+      await loader.hardReset();
+
+      setProgress("install", 100, "✅ Прошивка успішно завершена!");
+      logInstall("✅ Прошивка успішно завершена!", "success");
+      showInstallActions(false);
+    } catch (err) {
+      console.error(err);
+      setProgress("install", 100, `❌ Помилка: ${err.message}`);
+      logInstall(`❌ Помилка: ${err.message}`, "error");
+      showInstallActions(true);
+    } finally {
+      busy = false;
+      try {
+        await transport?.disconnect();
+      } catch {}
+    }
+  }
+}
