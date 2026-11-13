@@ -300,9 +300,43 @@ const $releases = document.getElementById("releases");
 
 (async () => {
   if ($releases) {
-    const versions = await fetch("./ресурси/тема/версії.json", {
-      cache: "no-cache",
-    }).then((r) => r.json());
+    // --- Loading state (versions JSON) ---
+
+    function showLoading(message, error = false) {
+      let el = $releases.querySelector(".ReleasesLoading");
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "ReleasesLoading";
+        el.innerHTML = `
+          <p class="ReleasesLoadingText"></p>
+          <div class="ProgressBar ProgressBar--indeterminate"><div class="progress-fill"></div></div>
+        `;
+        $releases.appendChild(el);
+      }
+      el.hidden = false;
+      const textEl = el.querySelector(".ReleasesLoadingText");
+      textEl.textContent = message;
+      textEl.classList.toggle("ReleasesLoadingError", error);
+      el.querySelector(".ProgressBar").hidden = error;
+    }
+
+    function hideLoading() {
+      const el = $releases.querySelector(".ReleasesLoading");
+      if (el) el.hidden = true;
+    }
+
+    let versions;
+    showLoading("Завантаження версій...");
+    try {
+      versions = await fetch("./ресурси/тема/версії.json", {
+        cache: "no-cache",
+      }).then((r) => r.json());
+      hideLoading();
+    } catch (err) {
+      console.error(err);
+      showLoading(`❌ Не вдалося завантажити версії: ${err.message}`, true);
+      return;
+    }
 
     // Loaded lazily; awaited only when the device is actually needed
     const esptool =
