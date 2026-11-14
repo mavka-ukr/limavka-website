@@ -331,7 +331,7 @@ const $releases = document.getElementById("releases");
     showLoading("Завантаження версій...");
     try {
       versions = await fetch("./ресурси/тема/версії.json", {
-        cache: "no-cache",
+        cache: "no-store",
       }).then((r) => r.json());
       hideLoading();
     } catch (err) {
@@ -557,7 +557,7 @@ const $releases = document.getElementById("releases");
           );
         } else {
           const response = await fetch(version.bin, {
-            cache: "no-cache",
+            cache: "no-store",
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -594,6 +594,7 @@ const $releases = document.getElementById("releases");
               offset += c.length;
             }
             downloadedData = merged;
+            downloadedBins[version.bin] = downloadedData;
             setProgress(
               "download",
               100,
