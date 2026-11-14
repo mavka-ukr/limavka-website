@@ -288,6 +288,8 @@ if ($contentForHeadings) {
 
 const $tables = document.querySelectorAll("table");
 
+let downloadedBins = {};
+
 $tables.forEach(($table) => {
   // wrap with div
   const $tableWrapper = document.createElement("div");
@@ -546,46 +548,58 @@ const $releases = document.getElementById("releases");
 
     async function downloadBin(version) {
       try {
-        const response = await fetch(version.bin, { cache: "no-cache" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const total = Number(response.headers.get("Content-Length")) || 0;
-        if (!response.body || !total) {
-          // No Content-Length / no streaming: fall back to a single read
-          const buf = await response.arrayBuffer();
-          downloadedData = new Uint8Array(buf);
+        if (downloadedBins[version.bin]) {
+          downloadedData = downloadedBins[version.bin];
           setProgress(
             "download",
             100,
             `Розмір файлу: ${formatSize(downloadedData.length)}`,
           );
         } else {
-          const reader = response.body.getReader();
-          const chunks = [];
-          let received = 0;
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            received += value.length;
+          const response = await fetch(version.bin, {
+            cache: "no-cache",
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const total = Number(response.headers.get("Content-Length")) || 0;
+          if (!response.body || !total) {
+            // No Content-Length / no streaming: fall back to a single read
+            const buf = await response.arrayBuffer();
+            downloadedData = new Uint8Array(buf);
+            downloadedBins[version.bin] = downloadedData;
             setProgress(
               "download",
-              Math.min(99, Math.round((received / total) * 100)),
-              `${formatSize(received)} / ${formatSize(total)}`,
+              100,
+              `Розмір файлу: ${formatSize(downloadedData.length)}`,
+            );
+          } else {
+            const reader = response.body.getReader();
+            const chunks = [];
+            let received = 0;
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              received += value.length;
+              setProgress(
+                "download",
+                Math.min(99, Math.round((received / total) * 100)),
+                `${formatSize(received)} / ${formatSize(total)}`,
+              );
+            }
+            const merged = new Uint8Array(received);
+            let offset = 0;
+            for (const c of chunks) {
+              merged.set(c, offset);
+              offset += c.length;
+            }
+            downloadedData = merged;
+            setProgress(
+              "download",
+              100,
+              `Розмір файлу: ${formatSize(downloadedData.length)}`,
             );
           }
-          const merged = new Uint8Array(received);
-          let offset = 0;
-          for (const c of chunks) {
-            merged.set(c, offset);
-            offset += c.length;
-          }
-          downloadedData = merged;
-          setProgress(
-            "download",
-            100,
-            `Розмір файлу: ${formatSize(downloadedData.length)}`,
-          );
         }
 
         showStage("ready");
