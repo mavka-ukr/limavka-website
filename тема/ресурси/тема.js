@@ -546,7 +546,7 @@ const $releases = document.getElementById("releases");
 
     async function downloadBin(version) {
       try {
-        const response = await fetch(version.bin);
+        const response = await fetch(version.bin, { cache: "no-cache" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const total = Number(response.headers.get("Content-Length")) || 0;
