@@ -330,9 +330,12 @@ const $releases = document.getElementById("releases");
     let versions;
     showLoading("Завантаження версій...");
     try {
-      versions = await fetch("./ресурси/тема/версії.json", {
-        cache: "no-store",
-      }).then((r) => r.json());
+      versions = await fetch(
+        "https://raw.githubusercontent.com/mavka-ukr/limavka-files/main/випуски-лімавки/версії.json",
+        {
+          cache: "no-store",
+        },
+      ).then((r) => r.json());
       hideLoading();
     } catch (err) {
       console.error(err);
